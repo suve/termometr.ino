@@ -28,9 +28,14 @@ DHT out_dht = DHT(DHT_OUT, DHT22);
 #define COLOUR_IN   ILI9341_RED
 #define COLOUR_OUT  ILI9341_DARKGREEN
 
-#define READ_HOURS 24
-#define READS_PER_HOUR 6
-#define READS_TOTAL (READ_HOURS * READS_PER_HOUR)
+// Total reads are 144 because I say so. (Okay, it's because 2px per read gives 288px which fits nicely in 320px width.)
+// Min reads determine the max scale (6ph = 24 hours).
+// Max reads determine the starting scale (384ph = 22.5min)
+#define READS_TOTAL 144
+#define READS_PER_HOUR_MIN  6
+#define READS_PER_HOUR_MAX  384
+unsigned long int ReadsPerHour;
+
 int in_mem[READS_TOTAL];
 int in_index = READS_TOTAL-1;
 int in_count = 0;
@@ -41,7 +46,7 @@ int out_index = READS_TOTAL-1;
 int out_count = 0;
 int out_current;
 
-#define STORE_DELAY ((60UL*60UL*1000UL)/READS_PER_HOUR)
+#define STORE_DELAY ((60UL*60UL*1000UL)/ReadsPerHour)
 unsigned long int last_store_millis;
 
 #define GRAPH_X_MARGIN 32
@@ -101,15 +106,19 @@ void drawAxes(void) {
   }
   
   // Horizontal lines to easily check for temperature 6, 12 and 18 hours ago
-  int hquart = READ_HOURS / 4;
-  for(int h = -3*hquart; h < 0; h+=hquart) {
-    int xpos = tft.width() -1 + h*GRAPH_READ_W*READS_PER_HOUR;
+  for(int i = -3; i < 0; i+=1) {
+    int xpos = tft.width() -1 + i*GRAPH_READ_W*(READS_TOTAL/4);
     int ypos = temperatureToYPos(300);
     tft.drawLine(xpos, ypos, xpos, 239, ILI9341_DARKGREY);
     
     String text = "";
-    text += h;
-    text += "h";
+    if((READS_TOTAL / ReadsPerHour) >= 4) {
+      text += i * (int)(READS_TOTAL / ReadsPerHour / 4);
+      text += "h";
+    } else {
+      text += i * 15 * (int)(READS_TOTAL / ReadsPerHour);
+      text += "m";
+    }
     
     xpos -= (text.length() * FONT_W)/2;
     ypos -= (FONT_H + 1);
@@ -167,6 +176,15 @@ void readTemperatures() {
 }
 
 void storemem(const int current_temp, int *const mem, int *const index, int *const count) {
+  if((*count == READS_TOTAL) && (ReadsPerHour > READS_PER_HOUR_MIN)) {
+    for(int i = 0; i < READS_TOTAL/2; ++i) {
+      mem[i] = (mem[i] + mem[i+1]) / 2;
+    }
+    
+    *count = READS_TOTAL/2;
+    *index = *count-1;
+  }
+  
   *index = ((*index)+1) % READS_TOTAL;
   mem[*index] = current_temp;
   
@@ -174,8 +192,15 @@ void storemem(const int current_temp, int *const mem, int *const index, int *con
 }
 
 void storeTemperatues(const unsigned long int current_millis) {
+  int old_in_count = in_count;
+  int old_out_count = out_count;
+  
   storemem(in_current, in_mem, &in_index, &in_count); 
   storemem(out_current, out_mem, &out_index, &out_count);  
+  
+  if((old_in_count > in_count) || (old_out_count > out_count)) {
+    ReadsPerHour /= 2;
+  }
   
   last_store_millis = current_millis;
 }
@@ -217,6 +242,7 @@ void setup() {
   tft.setRotation(3);
   titlescreen();
   
+  ReadsPerHour = READS_PER_HOUR_MAX;
   randomSeed(analogRead(0));
   delay(3500);
   
