@@ -30,10 +30,10 @@ DHT out_dht = DHT(DHT_OUT, DHT22);
 
 // Total reads are 144 because I say so. (Okay, it's because 2px per read gives 288px which fits nicely in 320px width.)
 // Min reads determine the max scale (6ph = 24 hours).
-// Max reads determine the starting scale (384ph = 22.5min)
+// Max reads determine the starting scale (192ph = 45min)
 #define READS_TOTAL 144
 #define READS_PER_HOUR_MIN  6
-#define READS_PER_HOUR_MAX  384
+#define READS_PER_HOUR_MAX  768
 unsigned long int ReadsPerHour;
 
 int in_mem[READS_TOTAL];
@@ -47,7 +47,7 @@ int out_count = 0;
 int out_current;
 
 #define STORE_DELAY ((60UL*60UL*1000UL)/ReadsPerHour)
-unsigned long int last_store_millis;
+unsigned long int next_store_millis;
 
 #define GRAPH_X_MARGIN 32
 #define GRAPH_Y_ZERO 159
@@ -116,7 +116,7 @@ void drawAxes(void) {
       text += i * (int)(READS_TOTAL / ReadsPerHour / 4);
       text += "h";
     } else {
-      text += i * 15 * (int)(READS_TOTAL / ReadsPerHour);
+      text += (i * (int)((60 * READS_TOTAL) / ReadsPerHour))/4;
       text += "m";
     }
     
@@ -191,7 +191,7 @@ void storemem(const int current_temp, int *const mem, int *const index, int *con
   if(*count < READS_TOTAL) *count += 1; 
 }
 
-void storeTemperatues(const unsigned long int current_millis) {
+void storeTemperatues() {
   int old_in_count = in_count;
   int old_out_count = out_count;
   
@@ -202,7 +202,7 @@ void storeTemperatues(const unsigned long int current_millis) {
     ReadsPerHour /= 2;
   }
   
-  last_store_millis = current_millis;
+  next_store_millis += STORE_DELAY;
 }
 
 
@@ -217,7 +217,7 @@ void titlescreen() {
   
   tft.setTextSize(2);
   tft.setTextColor(ILI9341_YELLOW);
-  text = "Wersja 2016/1110";
+  text = "Wersja 2016/1111";
   tft.setCursor((320 - 2*FONT_W*text.length())/2, 124);
   tft.print(text);
   
@@ -249,18 +249,26 @@ void setup() {
   tft.fillScreen(ILI9341_BLACK);
   drawScale();
   drawAxes();
+  
+  next_store_millis = millis();
 }
 
 
+#define LOOP_MIN_DELAY 4000
+
 void loop(void) {
+  unsigned long int current_millis = millis();
+  
   readTemperatures();
   printCurrentTemperatures();
   
-  unsigned long int current_millis = millis();
-  if((in_count == 0) || (out_count == 0) || (current_millis - last_store_millis >= STORE_DELAY)) {
-    storeTemperatues(current_millis);
+  if((in_count == 0) || (out_count == 0) || (current_millis >= next_store_millis)) {
+    storeTemperatues();
     drawGraph();
   }
   
-  delay(4800);
+  if(next_store_millis - current_millis <= LOOP_MIN_DELAY*2)
+    delay(next_store_millis - current_millis);
+  else
+    delay(LOOP_MIN_DELAY);
 }
