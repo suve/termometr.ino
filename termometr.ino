@@ -33,11 +33,15 @@ DHT out_dht = DHT(DHT_OUT, DHT22);
 int in_mem[READS_TOTAL];
 int in_index = READS_TOTAL-1;
 int in_count = 0;
+int in_current;
 
 int out_mem[READS_TOTAL];
 int out_index = READS_TOTAL-1;
 int out_count = 0;
+int out_current;
 
+#define STORE_DELAY ((60*60*1000)/READS_PER_HOUR)
+unsigned long int last_store_millis;
 
 #define GRAPH_X_MARGIN 32
 #define GRAPH_Y_ZERO 159
@@ -61,8 +65,8 @@ void printTemperature(const int temp, const int x, const int colour) {
 void printCurrentTemperatures(void) {
   tft.setTextSize(3);
   
-  printTemperature(in_mem[in_index], GRAPH_X_MARGIN, COLOUR_IN);
-  printTemperature(out_mem[out_index], 176, COLOUR_OUT);
+  printTemperature(in_current, GRAPH_X_MARGIN, COLOUR_IN);
+  printTemperature(out_current, 176, COLOUR_OUT);
 }
 
 int temperatureToYPos(const int temp) {
@@ -150,19 +154,28 @@ void drawGraph() {
 }
 
 
-void readDHT(DHT *dht, int *const mem, int *const index, int *const count) {
+void readDHT(DHT *dht, int *const current_temp) {
   dht->read();
-  int current_temp = dht->readTemperature() * 10.0;
-  
-  *index = ((*index)+1) % READS_TOTAL;
-  mem[*index] = current_temp;
-  
-  if(*count < READS_TOTAL) *count += 1;
+  *current_temp = dht->readTemperature() * 10.0;
 }
 
 void readTemperatures() {
-  readDHT(&in_dht, in_mem, &in_index, &in_count); 
-  readDHT(&out_dht, out_mem, &out_index, &out_count); 
+  readDHT(&in_dht, &in_current); 
+  readDHT(&out_dht, &out_current); 
+}
+
+void storemem(const int current_temp, int *const mem, int *const index, int *const count) {
+  *index = ((*index)+1) % READS_TOTAL;
+  mem[*index] = current_temp;
+  
+  if(*count < READS_TOTAL) *count += 1; 
+}
+
+void storeTemperatues(const unsigned long int current_millis) {
+  storemem(in_current, in_mem, &in_index, &in_count); 
+  storemem(out_current, out_mem, &out_index, &out_count);  
+  
+  last_store_millis = current_millis;
 }
 
 
@@ -203,7 +216,7 @@ void setup() {
   titlescreen();
   
   randomSeed(analogRead(0));
-  delay(3333);
+  delay(3500);
   
   tft.fillScreen(ILI9341_BLACK);
   drawScale();
@@ -215,7 +228,11 @@ void loop(void) {
   readTemperatures();
   printCurrentTemperatures();
   
-  drawGraph();
+  unsigned long int current_millis = millis();
+  if((in_count == 0) || (out_count == 0) || (current_millis - last_store_millis >= STORE_DELAY)) {
+    storeTemperatues(current_millis);
+    drawGraph();
+  }
   
-  delay(3000);
+  delay(4800);
 }
