@@ -28,8 +28,9 @@ DHT out_dht = DHT(DHT_OUT, DHT22);
 #define COLOUR_IN   ILI9341_RED
 #define COLOUR_OUT  ILI9341_DARKGREEN
 
+#define READ_HOURS 24
 #define READS_PER_HOUR 6
-#define READS_TOTAL (24 * READS_PER_HOUR)
+#define READS_TOTAL (READ_HOURS * READS_PER_HOUR)
 int in_mem[READS_TOTAL];
 int in_index = READS_TOTAL-1;
 int in_count = 0;
@@ -40,7 +41,7 @@ int out_index = READS_TOTAL-1;
 int out_count = 0;
 int out_current;
 
-#define STORE_DELAY ((60*60*1000)/READS_PER_HOUR)
+#define STORE_DELAY ((60UL*60UL*1000UL)/READS_PER_HOUR)
 unsigned long int last_store_millis;
 
 #define GRAPH_X_MARGIN 32
@@ -100,7 +101,8 @@ void drawAxes(void) {
   }
   
   // Horizontal lines to easily check for temperature 6, 12 and 18 hours ago
-  for(int h = -18; h < 0; h+=6) {
+  int hquart = READ_HOURS / 4;
+  for(int h = -3*hquart; h < 0; h+=hquart) {
     int xpos = tft.width() -1 + h*GRAPH_READ_W*READS_PER_HOUR;
     int ypos = temperatureToYPos(300);
     tft.drawLine(xpos, ypos, xpos, 239, ILI9341_DARKGREY);
