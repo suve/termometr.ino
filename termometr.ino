@@ -8,11 +8,12 @@
 #include "DHT.h"
 
 // For the Adafruit shield, these are the default.
-#define TFT_DC 9
-#define TFT_CS 10
+#define TFT_RESET 9
+#define TFT_DC    10
+#define TFT_CS    8
 
 // Use hardware SPI (on Uno, #13, #12, #11) and the above for CS/DC
-Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC);
+Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC, TFT_RESET);
 
 #define DHT_IN  2
 #define DHT_OUT 3
@@ -111,14 +112,20 @@ void drawAxes(void) {
     int ypos = temperatureToYPos(300);
     tft.drawLine(xpos, ypos, xpos, 239, ILI9341_DARKGREY);
     
-    String text = "";
+    int number; 
+    char unit;
     if((READS_TOTAL / ReadsPerHour) >= 4) {
-      text += i * (int)(READS_TOTAL / ReadsPerHour / 4);
-      text += "h";
+      number = -i * (int)((10L * READS_TOTAL) / ReadsPerHour / 4);
+      unit = 'h';
     } else {
-      text += (i * (int)((60 * READS_TOTAL) / ReadsPerHour))/4;
-      text += "m";
+      number = (-i * (int)((10L * 60L * READS_TOTAL) / ReadsPerHour))/4;
+      unit = 'm';
     }
+    
+    String text = "-";
+    text += (number / 10);
+    if(number % 10) { text += '.'; text += (number % 10); }
+    text += unit;
     
     xpos -= (text.length() * FONT_W)/2;
     ypos -= (FONT_H + 1);
@@ -175,10 +182,22 @@ void readTemperatures() {
   readDHT(&out_dht, &out_current); 
 }
 
+int average(const int a, const int b) {
+  if( ((a <= 0) && (b >= 0)) || ((a >= 0) && (b <= 0)) ) return (a+b)/2;
+  
+  int a_half = a / 2;
+  int a_mod = a % 2;
+  
+  int b_half = b / 2;
+  int b_mod = b % 2;
+  
+  return a_half + b_half + (a_mod & b_mod);
+}
+
 void storemem(const int current_temp, int *const mem, int *const index, int *const count) {
   if((*count == READS_TOTAL) && (ReadsPerHour > READS_PER_HOUR_MIN)) {
     for(int i = 0; i < READS_TOTAL/2; ++i) {
-      mem[i] = (mem[i] + mem[i+1]) / 2;
+      mem[i] = average(mem[i*2], mem[i*2 +1]);
     }
     
     *count = READS_TOTAL/2;
@@ -217,7 +236,7 @@ void titlescreen() {
   
   tft.setTextSize(2);
   tft.setTextColor(ILI9341_YELLOW);
-  text = "Wersja 2016/1111";
+  text = "Wersja 2016/1115";
   tft.setCursor((320 - 2*FONT_W*text.length())/2, 124);
   tft.print(text);
   
@@ -239,7 +258,7 @@ void setup() {
   out_dht.begin();
   tft.begin();
   
-  tft.setRotation(3);
+  tft.setRotation(1);
   titlescreen();
   
   ReadsPerHour = READS_PER_HOUR_MAX;
