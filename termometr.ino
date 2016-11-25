@@ -50,18 +50,23 @@ int out_current;
 #define STORE_DELAY ((60UL*60UL*1000UL)/ReadsPerHour)
 unsigned long int next_store_millis;
 
-#define GRAPH_X_MARGIN 32
-#define GRAPH_Y_ZERO 159
+
 #define GRAPH_READ_W 2
 #define GRAPH_READ_H 4
 
-void printTemperature(const int temp, const int x, const int colour) {
+#define GRAPH_X_MARGIN (320 - 1 - ((READS_TOTAL-1) * GRAPH_READ_W))
+#define GRAPH_Y_ZERO 159
+
+
+void printTemperature(int temp, const int x, const int colour) {
   tft.fillRect(x, 0, x+FONT_W*3*7, FONT_H*3, ILI9341_BLACK);
   
-  String text = (temp > 0) ? "+" : "";
+  String text = (temp > 0) ? "+" : (temp < 0) ? "-" : "";
+  temp = abs(temp);
+  
   text += (temp / 10);
   text += ".";
-  text += (abs(temp) % 10);
+  text += (temp % 10);
   text += "C";
 
   tft.setCursor(x, 0);
@@ -236,7 +241,7 @@ void titlescreen() {
   
   tft.setTextSize(2);
   tft.setTextColor(ILI9341_YELLOW);
-  text = "Wersja 2016/1115";
+  text = "Wersja 2016/1126";
   tft.setCursor((320 - 2*FONT_W*text.length())/2, 124);
   tft.print(text);
   
