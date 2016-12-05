@@ -52,14 +52,17 @@ unsigned long int next_store_millis;
 
 
 #define GRAPH_READ_W 2
-#define GRAPH_READ_H 4
-
 #define GRAPH_X_MARGIN (320 - 1 - ((READS_TOTAL-1) * GRAPH_READ_W))
-#define GRAPH_Y_ZERO 159
+
+#define GRAPH_Y_AREA 210
+
+int graph_temp_max = +300;
+int graph_temp_min = -200;
+int graph_temp_h = 4;
 
 
 void printTemperature(int temp, const int x, const int colour) {
-  tft.fillRect(x, 0, x+FONT_W*3*7, FONT_H*3, ILI9341_BLACK);
+  tft.fillRect(x, 0, FONT_W*3*7, FONT_H*3, ILI9341_BLACK);
   
   String text = (temp > 0) ? "+" : (temp < 0) ? "-" : "";
   temp = abs(temp);
@@ -81,8 +84,50 @@ void printCurrentTemperatures(void) {
   printTemperature(out_current, 176, COLOUR_OUT);
 }
 
+int calculateNewScale(void) {
+  const int old_temp_max = graph_temp_max;
+  const int old_temp_min = graph_temp_min;
+  
+  
+  graph_temp_max = graph_temp_min = 0;
+  
+  
+  for(int i = 0; i < in_count; ++i) {
+    if(in_mem[i] > graph_temp_max)
+      graph_temp_max = in_mem[i];
+    else if(in_mem[i] < graph_temp_min)
+      graph_temp_min = in_mem[i];
+  }
+  
+  for(int o = 0; o < out_count; ++o) {
+    if(out_mem[o] > graph_temp_max)
+      graph_temp_max = out_mem[o];
+    else if(out_mem[o] < graph_temp_min)
+      graph_temp_min = out_mem[o];
+  }
+  
+  
+  // Make sure we include 0 on the scale
+  if(graph_temp_max < 0) graph_temp_max = 0;
+  if(graph_temp_min > 0) graph_temp_min = 0;
+  
+  // Round up or down to nearest 10 degrees (100 steps)
+  if(graph_temp_max % 100) graph_temp_max = graph_temp_max - (graph_temp_max % 100) + 100;
+  if(graph_temp_min % 100) graph_temp_min = graph_temp_min - (graph_temp_min % 100) - 100;
+  
+  // Just to be sure, when both min and max are 0 - force scale to [-10, +10]
+  if((graph_temp_min == 0) && (graph_temp_max == 0)) {
+    graph_temp_max = +100;
+    graph_temp_min = -100;
+  }
+  
+  graph_temp_h = GRAPH_Y_AREA / ((graph_temp_max/10) - (graph_temp_min/10));
+  
+  return ((graph_temp_max != old_temp_max) || (graph_temp_min != old_temp_min));
+}
+
 int temperatureToYPos(const int temp) {
-  return GRAPH_Y_ZERO - (temp * GRAPH_READ_H / 10);
+  return 239 - (graph_temp_h * (temp - graph_temp_min))/10;
 }
 
 void drawScale(void) {
@@ -90,7 +135,7 @@ void drawScale(void) {
   
   tft.setTextColor(ILI9341_LIGHTGREY);
   tft.setTextSize(1);
-  for(int temp = -200; temp <= +300; temp += 100) {
+  for(int temp = graph_temp_min; temp <= graph_temp_max; temp += 100) {
     String text = (temp > 0) ? "+" : "";
     text += temp / 10;
     
@@ -105,25 +150,25 @@ void drawAxes(void) {
   tft.setTextColor(ILI9341_LIGHTGREY);
   tft.setTextSize(1);
   
-  // Horizontal lines to temperature levels are easily visible
-  for(int temp = -200; temp <= +300; temp += 100) {
+  // Horizontal lines so temperature levels are easily visible
+  for(int temp = graph_temp_min; temp <= graph_temp_max; temp += 100) {
     int ypos = temperatureToYPos(temp);
     tft.drawLine(GRAPH_X_MARGIN, ypos, 319, ypos, (temp == 0) ? ILI9341_LIGHTGREY : ILI9341_DARKGREY);
   }
   
-  // Horizontal lines to easily check for temperature 6, 12 and 18 hours ago
-  for(int i = -3; i < 0; i+=1) {
-    int xpos = tft.width() -1 + i*GRAPH_READ_W*(READS_TOTAL/4);
-    int ypos = temperatureToYPos(300);
+  // Vertical lines to easily check for temperature 6, 12 and 18 hours ago
+  for(int i = 3; i > 0; --i) {
+    int xpos = GRAPH_X_MARGIN + 1 + GRAPH_READ_W*((i*READS_TOTAL)/4 - 1);
+    int ypos = temperatureToYPos(graph_temp_max);
     tft.drawLine(xpos, ypos, xpos, 239, ILI9341_DARKGREY);
     
     int number; 
     char unit;
     if((READS_TOTAL / ReadsPerHour) >= 4) {
-      number = -i * (int)((10L * READS_TOTAL) / ReadsPerHour / 4);
+      number = (4-i) * (int)((10L * READS_TOTAL) / ReadsPerHour / 4);
       unit = 'h';
     } else {
-      number = (-i * (int)((10L * 60L * READS_TOTAL) / ReadsPerHour))/4;
+      number = ((4-i) * (int)((10L * 60L * READS_TOTAL) / ReadsPerHour))/4;
       unit = 'm';
     }
     
@@ -167,8 +212,13 @@ void drawLine(const int *const data, const int endsAt, const int count, const in
   }
 }
 
-void drawGraph() {
-  tft.fillRect(GRAPH_X_MARGIN, FONT_H*3, 319, 239, ILI9341_BLACK);
+void drawGraph(const int fullRedraw) {
+  if(fullRedraw) {
+    tft.fillRect(0, FONT_H*3, 320, 239, ILI9341_BLACK);
+    drawScale();
+  } else {
+    tft.fillRect(GRAPH_X_MARGIN, FONT_H*3, 319, 239, ILI9341_BLACK);
+  }
   
   drawAxes();
   
@@ -241,7 +291,7 @@ void titlescreen() {
   
   tft.setTextSize(2);
   tft.setTextColor(ILI9341_YELLOW);
-  text = "Wersja 2016/1126";
+  text = "Wersja 2016/1205";
   tft.setCursor((320 - 2*FONT_W*text.length())/2, 124);
   tft.print(text);
   
@@ -288,7 +338,9 @@ void loop(void) {
   
   if((in_count == 0) || (out_count == 0) || (current_millis >= next_store_millis)) {
     storeTemperatues();
-    drawGraph();
+    
+    int needsRedraw = calculateNewScale();
+    drawGraph(needsRedraw);
   }
   
   if(next_store_millis - current_millis <= LOOP_MIN_DELAY*2)
