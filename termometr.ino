@@ -130,8 +130,12 @@ int temperatureToYPos(const int temp) {
   return 239 - (graph_temp_h * (temp - graph_temp_min))/10;
 }
 
+int graphMaxY(void) {
+  return temperatureToYPos(graph_temp_max);
+}
+
 void drawScale(void) {
-  tft.drawLine(GRAPH_X_MARGIN-1, 40, GRAPH_X_MARGIN-1, 239, ILI9341_LIGHTGREY);
+  tft.drawLine(GRAPH_X_MARGIN-1, graphMaxY(), GRAPH_X_MARGIN-1, 239, ILI9341_LIGHTGREY);
   
   tft.setTextColor(ILI9341_LIGHTGREY);
   tft.setTextSize(1);
@@ -157,9 +161,10 @@ void drawAxes(void) {
   }
   
   // Vertical lines to easily check for temperature 6, 12 and 18 hours ago
+  int ymax = graphMaxY();
   for(int i = 3; i > 0; --i) {
     int xpos = GRAPH_X_MARGIN + 1 + GRAPH_READ_W*((i*READS_TOTAL)/4 - 1);
-    int ypos = temperatureToYPos(graph_temp_max);
+    int ypos = ymax;
     tft.drawLine(xpos, ypos, xpos, 239, ILI9341_DARKGREY);
     
     int number; 
@@ -265,18 +270,21 @@ void storemem(const int current_temp, int *const mem, int *const index, int *con
   if(*count < READS_TOTAL) *count += 1; 
 }
 
-void storeTemperatues() {
+int storeTemperatues() {
   int old_in_count = in_count;
   int old_out_count = out_count;
   
   storemem(in_current, in_mem, &in_index, &in_count); 
   storemem(out_current, out_mem, &out_index, &out_count);  
   
+  next_store_millis += STORE_DELAY;
+  
   if((old_in_count > in_count) || (old_out_count > out_count)) {
     ReadsPerHour /= 2;
+    return 1;
   }
   
-  next_store_millis += STORE_DELAY;
+  return 0;
 }
 
 
@@ -291,7 +299,7 @@ void titlescreen() {
   
   tft.setTextSize(2);
   tft.setTextColor(ILI9341_YELLOW);
-  text = "Wersja 2016/1205";
+  text = "Wersja 2017/0204";
   tft.setCursor((320 - 2*FONT_W*text.length())/2, 124);
   tft.print(text);
   
@@ -337,9 +345,11 @@ void loop(void) {
   printCurrentTemperatures();
   
   if((in_count == 0) || (out_count == 0) || (current_millis >= next_store_millis)) {
-    storeTemperatues();
+    int needsRedraw = 0;
     
-    int needsRedraw = calculateNewScale();
+    needsRedraw |= storeTemperatues();
+    needsRedraw |= calculateNewScale();
+    
     drawGraph(needsRedraw);
   }
   
