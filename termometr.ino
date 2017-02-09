@@ -29,7 +29,7 @@ DHT out_dht = DHT(DHT_OUT, DHT22);
 #define COLOUR_IN   ILI9341_RED
 #define COLOUR_OUT  ILI9341_DARKGREEN
 
-// Total reads are 144 because I say so. (Okay, it's because 2px per read gives 288px which fits nicely in 320px width.)
+// Total reads are 144 because because 144 / 24 gives 6 reads per hour, and 2px per read gives 288px, which fits nicely in 320px width.
 // Min reads determine the max scale (6ph = 24 hours).
 // Max reads determine the starting scale (192ph = 45min)
 #define READS_TOTAL 144
@@ -52,7 +52,7 @@ unsigned long int next_store_millis;
 
 
 #define GRAPH_READ_W 2
-#define GRAPH_X_MARGIN (320 - 1 - ((READS_TOTAL-1) * GRAPH_READ_W))
+#define GRAPH_X_MARGIN (320 - ((READS_TOTAL) * GRAPH_READ_W) - 1)
 
 #define GRAPH_Y_AREA 210
 
@@ -150,23 +150,13 @@ void drawScale(void) {
   }
 }
 
-void drawAxes(void) {
+void drawTimeLabels(void) {
   tft.setTextColor(ILI9341_LIGHTGREY);
   tft.setTextSize(1);
   
-  // Horizontal lines so temperature levels are easily visible
-  for(int temp = graph_temp_min; temp <= graph_temp_max; temp += 100) {
-    int ypos = temperatureToYPos(temp);
-    tft.drawLine(GRAPH_X_MARGIN, ypos, 319, ypos, (temp == 0) ? ILI9341_LIGHTGREY : ILI9341_DARKGREY);
-  }
+  int ypos = graphMaxY() - FONT_H - 1;
   
-  // Vertical lines to easily check for temperature 6, 12 and 18 hours ago
-  int ymax = graphMaxY();
   for(int i = 3; i > 0; --i) {
-    int xpos = GRAPH_X_MARGIN + 1 + GRAPH_READ_W*((i*READS_TOTAL)/4 - 1);
-    int ypos = ymax;
-    tft.drawLine(xpos, ypos, xpos, 239, ILI9341_DARKGREY);
-    
     int number; 
     char unit;
     if((READS_TOTAL / ReadsPerHour) >= 4) {
@@ -182,10 +172,29 @@ void drawAxes(void) {
     if(number % 10) { text += '.'; text += (number % 10); }
     text += unit;
     
+    int xpos = GRAPH_X_MARGIN + 1 + GRAPH_READ_W*((i*READS_TOTAL)/4 - 1);
     xpos -= (text.length() * FONT_W)/2;
-    ypos -= (FONT_H + 1);
+    
     tft.setCursor(xpos, ypos);
     tft.print(text);
+  }
+}
+
+void drawAxes(void) {
+  tft.setTextColor(ILI9341_LIGHTGREY);
+  tft.setTextSize(1);
+  
+  // Horizontal lines so temperature levels are easily visible
+  for(int temp = graph_temp_min; temp <= graph_temp_max; temp += 100) {
+    int ypos = temperatureToYPos(temp);
+    tft.drawLine(GRAPH_X_MARGIN, ypos, 319, ypos, (temp == 0) ? ILI9341_LIGHTGREY : ILI9341_DARKGREY);
+  }
+  
+  // Vertical lines to easily check for temperature 6, 12 and 18 hours ago
+  int ymax = graphMaxY();
+  for(int i = 3; i > 0; --i) {
+    int xpos = GRAPH_X_MARGIN + 1 + GRAPH_READ_W*((i*READS_TOTAL)/4 - 1);
+    tft.drawLine(xpos, ymax, xpos, 239, ILI9341_DARKGREY);
   }
 }
 
@@ -196,11 +205,11 @@ void drawLine(const int *const data, const int endsAt, const int count, const in
   int start = endsAt - count + 1;
   if(start < 0) start += READS_TOTAL;
   
-  int old_x = GRAPH_X_MARGIN + GRAPH_READ_W*(READS_TOTAL-count);
+  int old_x = 320 - (count * GRAPH_READ_W);
   int old_y = temperatureToYPos(data[start]);
   
   if(count == 1) {
-    tft.drawPixel(old_x, old_y, colour);
+    tft.drawPixel(319, old_y, colour);
     return;
   }
   
@@ -219,13 +228,17 @@ void drawLine(const int *const data, const int endsAt, const int count, const in
 
 void drawGraph(const int fullRedraw) {
   if(fullRedraw) {
-    tft.fillRect(0, FONT_H*3, 320, 239, ILI9341_BLACK);
+    tft.fillRect(0, 0, 320, 240, ILI9341_BLACK);
     drawScale();
   } else {
-    tft.fillRect(GRAPH_X_MARGIN, FONT_H*3, 319, 239, ILI9341_BLACK);
+    int xpos = (in_count > out_count) ? in_count : out_count;
+    xpos = 320 - (xpos * GRAPH_READ_W);
+    
+    tft.fillRect(xpos, FONT_H*3, 320, 240, ILI9341_BLACK);
   }
   
   drawAxes();
+  drawTimeLabels();
   
   drawLine(in_mem, in_index, in_count, COLOUR_IN);
   drawLine(out_mem, out_index, out_count, COLOUR_OUT);
@@ -299,7 +312,7 @@ void titlescreen() {
   
   tft.setTextSize(2);
   tft.setTextColor(ILI9341_YELLOW);
-  text = "Wersja 2017/0204";
+  text = "Wersja 2017/0205";
   tft.setCursor((320 - 2*FONT_W*text.length())/2, 124);
   tft.print(text);
   
@@ -342,7 +355,6 @@ void loop(void) {
   unsigned long int current_millis = millis();
   
   readTemperatures();
-  printCurrentTemperatures();
   
   if((in_count == 0) || (out_count == 0) || (current_millis >= next_store_millis)) {
     int needsRedraw = 0;
@@ -352,6 +364,12 @@ void loop(void) {
     
     drawGraph(needsRedraw);
   }
+  
+  printCurrentTemperatures();
+  
+  // Depending on Y scale, the time labels may get overdrawn by the current temps.
+  if(graphMaxY() - FONT_H - 1 < FONT_H*3) drawTimeLabels();
+  
   
   if(next_store_millis - current_millis <= LOOP_MIN_DELAY*2)
     delay(next_store_millis - current_millis);
