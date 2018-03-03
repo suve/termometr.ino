@@ -15,6 +15,20 @@
  * this program (LICENCE.txt). If not, see <http://www.gnu.org/licenses/>.
 */
 
+// Change the "1" to "0" for Polish titlescreen text.
+#if 1
+  #define STR_WEATHER_STATION "Weather station"
+  #define STR_VERSION         "Version 2018/0303"
+  #define STR_AUTHOR          "Software by: suve"
+  #define STR_LICENCE         "Licence: GNU GPL v3"
+#else
+  #define STR_WEATHER_STATION "Stacja pogodowa"
+  #define STR_VERSION         "Wersja 2018/0303"
+  #define STR_AUTHOR          "Oprogramowanie: suve"
+  #define STR_LICENCE         "Licencja: GNU GPL v3"
+#endif
+
+
 // SPI.h is required by the ILI9341 library.
 #include "SPI.h"
 
@@ -322,24 +336,24 @@ void titlescreen() {
   
   tft.setTextSize(3);
   tft.setTextColor(ILI9341_ORANGE);
-  String text = "Stacja pogodowa";
+  String text = STR_WEATHER_STATION;
   tft.setCursor((320 - 3*FONT_W*text.length())/2, 96);
   tft.print(text);
   
   tft.setTextSize(2);
   tft.setTextColor(ILI9341_YELLOW);
-  text = "Wersja 2017/0205";
+  text = STR_VERSION;
   tft.setCursor((320 - 2*FONT_W*text.length())/2, 124);
   tft.print(text);
   
   tft.setTextSize(1);
   tft.setTextColor(ILI9341_WHITE);
   
-  text = "Oprogramowanie: suve";
+  text = STR_AUTHOR;
   tft.setCursor((320 - FONT_W*text.length())/2, 220);
   tft.print(text);
   
-  text = "Licencja: GNU GPL v3";
+  text = STR_LICENCE;
   tft.setCursor((320 - FONT_W*text.length())/2, 230);
   tft.print(text);
 }
