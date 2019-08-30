@@ -1,6 +1,6 @@
 /**
  * termometr.ino - an Arduino-based thermometer using DHT22 and ILI9341
- * Copyright (C) 2016-2018 Artur "suve" Iwicki
+ * Copyright (C) 2016-2019 Artur "suve" Iwicki
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License, version 3,
@@ -15,40 +15,79 @@
  * this program (LICENCE.txt). If not, see <http://www.gnu.org/licenses/>.
 */
 
-// Change the "1" to "0" for Polish titlescreen text.
-#if 1
-  #define STR_WEATHER_STATION "Weather station"
-  #define STR_VERSION         "Version 2018/0303"
-  #define STR_AUTHOR          "Software by: suve"
-  #define STR_LICENCE         "Licence: GNU GPL v3"
-#else
-  #define STR_WEATHER_STATION "Stacja pogodowa"
-  #define STR_VERSION         "Wersja 2018/0303"
-  #define STR_AUTHOR          "Oprogramowanie: suve"
-  #define STR_LICENCE         "Licencja: GNU GPL v3"
-#endif
+// List of supported sensor types.
+#define SENSTYPE_DHT22  1
+#define SENSTYPE_DALLAS 2
 
+// Choose what type of sensor you are using.
+#define SENSOR_IN_TYPE   SENSTYPE_DHT22
+#define SENSOR_OUT_TYPE  SENSTYPE_DALLAS
 
-// SPI.h is required by the ILI9341 library.
-#include "SPI.h"
+// Define which pins are used by the sensors
+#define SENSOR_IN_PIN  2
+#define SENSOR_OUT_PIN 3
 
-#include "Adafruit_GFX.h"
-#include "Adafruit_ILI9341.h"
-
-#include "DHT.h"
-
+// Define which pins are used for the ILI display.
 // For the Adafruit shield, these are the default.
 #define TFT_RESET 9
 #define TFT_DC    10
 #define TFT_CS    8
 
+// Change the "1" to "0" for Polish titlescreen text.
+#if 1
+  #define STR_WEATHER_STATION "Weather station"
+  #define STR_VERSION         "Version 2019/0830"
+  #define STR_AUTHOR          "Software by: suve"
+  #define STR_LICENCE         "Licence: GNU GPL v3"
+#else
+  #define STR_WEATHER_STATION "Stacja pogodowa"
+  #define STR_VERSION         "Wersja 2019/0830"
+  #define STR_AUTHOR          "Oprogramowanie: suve"
+  #define STR_LICENCE         "Licencja: GNU GPL v3"
+#endif
+
+// --- configuration end --- 
+
+
+// SPI.h is required by the ILI9341 library.
+#include "SPI.h"
+#include "Adafruit_GFX.h"
+#include "Adafruit_ILI9341.h"
+
 // Use hardware SPI (on Uno, #13, #12, #11) and the above for CS/DC
 Adafruit_ILI9341 tft = Adafruit_ILI9341(TFT_CS, TFT_DC, TFT_RESET);
 
-#define DHT_IN  2
-#define DHT_OUT 3
-DHT in_dht = DHT(DHT_IN, DHT22);
-DHT out_dht = DHT(DHT_OUT, DHT22);
+// Decide which libraries we need based on the sensors
+#if (SENSOR_IN_TYPE == SENSTYPE_DHT22) || (SENSOR_OUT_TYPE == SENSTYPE_DHT22)
+  #include "DHT.h"
+  #define USING_DHT_SENSORS
+#endif
+#if (SENSOR_IN_TYPE == SENSTYPE_DALLAS) || (SENSOR_OUT_TYPE == SENSTYPE_DALLAS)
+  #include "OneWire.h" 
+  #include "DallasTemperature.h"
+  #define USING_DALLAS_SENSORS
+#endif
+
+// Declare global vars based on sensor types
+#if (SENSOR_IN_TYPE == SENSTYPE_DHT22)
+  DHT in_dht = DHT(SENSOR_IN_PIN, DHT22);
+#elif (SENSOR_IN_TYPE == SENSTYPE_DALLAS)
+  OneWire in_oneWire = OneWire(SENSOR_IN_PIN);
+  DallasTemperature in_dallas(&in_oneWire);
+  uint8_t in_dallas_addr[8];
+#else
+  #error "SENSOR_IN_TYPE is not set correctly"
+#endif
+  
+#if (SENSOR_OUT_TYPE == SENSTYPE_DHT22)
+  DHT out_dht = DHT(SENSOR_OUT_PIN, DHT22);
+#elif (SENSOR_OUT_TYPE == SENSTYPE_DALLAS)
+  OneWire out_oneWire = OneWire(SENSOR_OUT_PIN);
+  DallasTemperature out_dallas(&out_oneWire);
+  uint8_t out_dallas_addr[8];
+#else
+  #error "SENSOR_OUT_TYPE is not set correctly"
+#endif
 
 
 // According to Adafruit_GFX docs, font size is 5x8.
@@ -61,7 +100,7 @@ DHT out_dht = DHT(DHT_OUT, DHT22);
 
 // Total reads are 144 because because 144 / 24 gives 6 reads per hour, and 2px per read gives 288px, which fits nicely in 320px width.
 // Min reads determine the max scale (6ph = 24 hours).
-// Max reads determine the starting scale (192ph = 45min)
+// Max reads determine the starting scale (192ph = 45min; 768ph = 12.5min)
 #define READS_TOTAL 144
 #define READS_PER_HOUR_MIN  6
 #define READS_PER_HOUR_MAX  768
@@ -274,15 +313,32 @@ void drawGraph(const int fullRedraw) {
   drawLine(out_mem, out_index, out_count, COLOUR_OUT);
 }
 
-
+#ifdef USING_DHT_SENSORS
 void readDHT(DHT *dht, int *const current_temp) {
   dht->read();
   *current_temp = dht->readTemperature() * 10.0;
 }
+#endif
+
+#ifdef USING_DALLAS_SENSORS
+void readDallas(DallasTemperature *dallas, const uint8_t *deviceAddr, int *const current_temp) {
+  dallas->requestTemperaturesByAddress(deviceAddr);
+  *current_temp = dallas->getTempC(deviceAddr) * 10.0; 
+}
+#endif
 
 void readTemperatures() {
-  readDHT(&in_dht, &in_current); 
-  readDHT(&out_dht, &out_current); 
+  #if SENSOR_IN_TYPE == SENSTYPE_DHT22
+    readDHT(&in_dht, &in_current);
+  #elif SENSOR_IN_TYPE == SENSTYPE_DALLAS
+    readDallas(&in_dallas, in_dallas_addr, &in_current);
+  #endif
+
+  #if SENSOR_OUT_TYPE == SENSTYPE_DHT22
+    readDHT(&out_dht, &out_current);
+  #elif SENSOR_OUT_TYPE == SENSTYPE_DALLAS
+    readDallas(&out_dallas, out_dallas_addr, &out_current);
+  #endif
 }
 
 int average(const int a, const int b) {
@@ -360,12 +416,26 @@ void titlescreen() {
 
 
 void setup() {
-  in_dht.begin();
-  out_dht.begin();
   tft.begin();
   
   tft.setRotation(1);
   titlescreen();
+
+  #if SENSOR_IN_TYPE == SENSTYPE_DHT22
+    in_dht.begin();
+  #elif SENSOR_IN_TYPE == SENSTYPE_DALLAS
+    in_dallas.begin();
+    in_dallas.setWaitForConversion(true);
+    in_dallas.getAddress(in_dallas_addr, 0);
+  #endif
+
+  #if SENSOR_OUT_TYPE == SENSTYPE_DHT22
+    out_dht.begin();
+  #elif SENSOR_OUT_TYPE == SENSTYPE_DALLAS
+    out_dallas.begin();
+    out_dallas.setWaitForConversion(true);
+    out_dallas.getAddress(out_dallas_addr, 0);
+  #endif
   
   ReadsPerHour = READS_PER_HOUR_MAX;
   randomSeed(analogRead(0));
